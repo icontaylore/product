@@ -1,9 +1,85 @@
 services:
-  db:
-    image: postgres:latest
+  postgres:
+    image: postgres:13
     environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PAS}
-      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER:-admin}
+      POSTGRES_PASSWORD: ${DB_PAS:-1}
+      POSTGRES_DB: ${DB_NAME:-product} 
     ports:
-      - "${DB_PORT}:${POSTGRES_PORT}"
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-admin} -d ${DB_NAME:-product}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - debezium
+
+  zookeeper:
+    image: zookeeper:3.8
+    ports:
+      - "2181:2181"
+    networks:
+      - debezium
+
+  kafka:
+    image: wurstmeister/kafka:2.13-2.8.1
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9093,EXTERNAL://localhost:9094
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "9093:9093"
+      - "9094:9094"
+    networks:
+      - debezium
+
+  connect:
+    image: debezium/connect:2.3
+    depends_on:
+      - kafka
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9093
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: connect-configs
+      OFFSET_STORAGE_TOPIC: connect-offsets
+      STATUS_STORAGE_TOPIC: connect-status
+      # Добавьте эти переменные для DNS
+      KAFKA_CLIENT_DNS_LOOKUP: "use_all_dns_ips"
+      CONNECT_PRODUCER_CLIENT_DNS_LOOKUP: "use_all_dns_ips"
+      CONNECT_CONSUMER_CLIENT_DNS_LOOKUP: "use_all_dns_ips"
+    networks:
+      - debezium
+
+  elasticsearch:
+    image: elasticsearch:8.12.0
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: false
+    ports:
+      - "9200:9200"
+    networks:
+      - debezium
+
+  kibana:
+    image: kibana:8.12.0
+    depends_on:
+      - elasticsearch
+    ports:
+      - "5601:5601"
+    networks:
+      - debezium
+
+networks:
+  debezium:
+    driver: bridge
+
+volumes:
+  postgres_data:
