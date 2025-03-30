@@ -28,4 +28,3 @@ func main() {
 		logger.Println("open db: ошибка с применением миграции")
 	}
 	fmt.Println("успешно")
-}
