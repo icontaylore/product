@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"log"
@@ -23,5 +24,8 @@ func main() {
 	}
 	logger.Println("open db: успешное подключение к бд")
 	// если нету таблицы, создаём её
-	db.AutoMigrate(&models.Product{})
+	if err = db.AutoMigrate(&models.Product{}); err != nil {
+		logger.Println("open db: ошибка с применением миграции")
+	}
+	fmt.Println("успешно")
 }

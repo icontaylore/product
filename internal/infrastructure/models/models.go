@@ -1,9 +1,6 @@
 package models
 
-import "gorm.io/gorm"
-
 type Product struct {
-	gorm.Model
 	Id            int     `gorm:"primaryKey;autoIncrement"`
 	Name          string  `gorm:"type:varchar(100);not null"`
 	Description   string  `gorm:"type:varchar(255);"`

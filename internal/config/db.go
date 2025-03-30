@@ -21,7 +21,7 @@ func ParseConfig() (string, error) {
 		log.Printf("err: ошибка загрузки кофига")
 		return "", err
 	}
-	out := fmt.Sprintf("host=%d user=%s password=%s dbname=%s port=%d sslmode=disable",
+	out := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
 		os.Getenv("HOST"),
 		os.Getenv("DB_USER"),
 		os.Getenv("DB_PAS"),

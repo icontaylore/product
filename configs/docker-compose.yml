@@ -1,9 +1,49 @@
 services:
-  db:
-    image: postgres:latest
+  postgres:
+    image: postgres:13
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PAS}
       POSTGRES_DB: ${DB_NAME}
     ports:
-      - "${DB_PORT}:${POSTGRES_PORT}"
+      - "${POSTGRES_PORT}:${DB_PORT}"
+    networks:
+      - debezium
+
+  zookeeper:
+    image: wurstmeister/zookeeper:3.4.6
+    ports:
+      - "2181:2181"
+    networks:
+      - debezium
+
+  kafka:
+    image: wurstmeister/kafka:latest
+    environment:
+      KAFKA_ADVERTISED_LISTENER: ${KAFKA_ADVERTISED_LISTENER}
+      KAFKA_LISTENER: ${KAFKA_LISTENER}
+      KAFKA_LISTENER_SECURITY_PROTOCOL: ${KAFKA_LISTENER_SECURITY_PROTOCOL}
+      KAFKA_ZOOKEEPER_CONNECT: ${KAFKA_ZOOKEEPER_CONNECT}
+    ports:
+      - "9093:9093"
+    networks:
+      - debezium
+
+  connect:
+    image: ${DEBEZIUM_CONNECTOR_IMAGE}
+    environment:
+      BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      GROUP_ID: "1"
+      CONFIG_STORAGE_TOPIC: "dbz_config"
+      OFFSET_STORAGE_TOPIC: "dbz_offset"
+      STATUS_STORAGE_TOPIC: "dbz_status"
+    ports:
+      - "8083:8083"
+    depends_on:
+      - kafka
+    networks:
+      - debezium
+
+networks:
+  debezium:
+    driver: bridge
