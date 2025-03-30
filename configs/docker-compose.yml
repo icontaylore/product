@@ -2,10 +2,8 @@ services:
   db:
     image: postgres:latest
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: mydatabase
-    volumes:
-      - ./init_sql:/docker-entrypoint-initdb.d/init.sql
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PAS}
+      POSTGRES_DB: ${DB_NAME}
     ports:
-      - "5432:5432"
+      - "${DB_PORT}:${POSTGRES_PORT}"
