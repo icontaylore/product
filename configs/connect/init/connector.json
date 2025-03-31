@@ -1,0 +1,18 @@
+{
+  "name": "product-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "admin",
+    "database.password": "1",
+    "database.dbname": "product",
+    "database.server.name": "product-server",
+    "table.include.list": "public.*",
+    "plugin.name": "pgoutput",
+    "slot.name": "debezium_slot",
+    "publication.name": "dbz_publication",
+    "topic.prefix": "dbz",
+    "poll.interval.ms": "5000"
+  }
+}

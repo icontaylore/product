@@ -6,9 +6,10 @@ services:
       POSTGRES_PASSWORD: ${DB_PAS:-1}
       POSTGRES_DB: ${DB_NAME:-product}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./postgre_init:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-admin} -d ${DB_NAME:-product}"]
       interval: 5s
@@ -46,15 +47,21 @@ services:
     depends_on:
       - kafka
     environment:
-      BOOTSTRAP_SERVERS: kafka:9093
-      GROUP_ID: 1
-      CONFIG_STORAGE_TOPIC: connect-configs
-      OFFSET_STORAGE_TOPIC: connect-offsets
-      STATUS_STORAGE_TOPIC: connect-status
-      # Добавьте эти переменные для DNS
-      KAFKA_CLIENT_DNS_LOOKUP: "use_all_dns_ips"
-      CONNECT_PRODUCER_CLIENT_DNS_LOOKUP: "use_all_dns_ips"
-      CONNECT_CONSUMER_CLIENT_DNS_LOOKUP: "use_all_dns_ips"
+      BOOTSTRAP_SERVERS: ${CONNECT_BOOTSTRAP_SERVERS}
+      GROUP_ID: ${CONNECT_GROUP_ID}
+      CONFIG_STORAGE_TOPIC: ${CONNECT_CONFIG_STORAGE_TOPIC}
+      OFFSET_STORAGE_TOPIC: ${CONNECT_OFFSET_STORAGE_TOPIC}
+      STATUS_STORAGE_TOPIC: ${CONNECT_STATUS_STORAGE_TOPIC}
+      CONNECT_PLUGIN_PATH: "/kafka/connect,/kafka/connect/debezium-connector-postgres"
+    volumes:
+      - ./connect/init:/init
+    healthcheck:
+      test: [
+        "CMD-SHELL",
+        "[ -f /init/connector.json ] && curl -X POST -H 'Content-Type: application/json' -d @/init/connector.json http://localhost:8083/connectors || exit 0"
+      ]
+    ports:
+      - "8083:8083"
     networks:
       - debezium
 
