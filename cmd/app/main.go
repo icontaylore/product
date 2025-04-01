@@ -33,16 +33,26 @@ func main() {
 	}
 	fmt.Println("успешно")
 
-	// kafka
-	topic := "dbz.public.products"
-	logger.Println("kafka topic:потребитель для топика:", topic)
-	go kafka.StartConsumer(topic)
+	// kafka cfg
+	configKafka := kafka.NewConfig("localhost:9093", "product-service-group")
+	// 3 workers
+	consumer, err := kafka.NewConsumer(configKafka, 3)
+	if err != nil {
+		log.Fatal("main:ошибка в загрузке консьюмера")
+	}
+	defer consumer.Close()
+	// debezium handle
+	handler := kafka.NewDebeziumHandler()
+	// subscribe topic
+	if err := consumer.Subscribe("dbz.public.products", handler); err != nil {
+		log.Fatalf("Failed to subscribe: %v", err)
+	}
 
-	// Создаем канал для получения сигналов о завершении работы программы
+	// создаем канал для получения сигналов о завершении работы программы
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM) // Перехватываем сигналы завершения
 
-	// Ожидаем сигнала для завершения работы
+	// ожидаем сигнала для завершения работы
 	<-stop
 	log.Println("Завершение работы программы.")
 }

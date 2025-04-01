@@ -1,66 +1,89 @@
 package kafka
 
 import (
-	"fmt"
-	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"gopkg.in/confluentinc/confluent-kafka-go.v1/kafka"
 	"log"
-	"os"
-	"os/signal"
-	"product/internal/infrastructure/models"
-	"syscall"
+	"sync"
+	"time"
 )
 
-type KafkaMessage struct {
-	Payload struct {
-		Op     string          `json:"op"`
-		Before *models.Product `json:"before"`
-		After  *models.Product `json:"after"`
-	} `json:"payload"`
+// Consumer обрабатывает сообщения из Kafka
+type Consumer struct {
+	consumer   *kafka.Consumer
+	workers    int
+	messageCh  chan *kafka.Message
+	shutdownCh chan struct{}
+	wg         sync.WaitGroup
 }
 
-type Product struct {
-	ID            int     `json:"id"`
-	Name          string  `json:"name"`
-	Description   *string `json:"description,omitempty"` // mb null
-	Price         string  `json:"price"`
-	StockQuantity int64   `json:"stock_quantity"`
-}
+// NewConsumer создает новый экземпляр Consumer
+func NewConsumer(cfg *Config, workers int) (*Consumer, error) {
+	kafkaConfig := cfg.CreateConsumerConfig()
 
-func StartConsumer(topic string) {
-	conf := &kafka.ConfigMap{
-		"bootstrap.servers": "localhost:9093",
-		"group.id":          "product-consumer",
-		"auto.offset.reset": "earliest",
-	}
-
-	consumer, err := kafka.NewConsumer(conf)
+	c, err := kafka.NewConsumer(kafkaConfig)
 	if err != nil {
-		log.Fatal("kafka:not create cons..")
+		return nil, err
 	}
-	defer consumer.Close()
 
-	consumer.SubscribeTopics([]string{topic}, nil)
+	return &Consumer{
+		consumer:   c,
+		workers:    workers,
+		messageCh:  make(chan *kafka.Message, workers*3),
+		shutdownCh: make(chan struct{}),
+	}, nil
+}
 
-	log.Println("kafka:consumer запущен")
+// Subscribe подписывается на топик и запускает обработчики
+func (c *Consumer) Subscribe(topic string, handler func(*kafka.Message) error) error {
+	if err := c.consumer.SubscribeTopics([]string{topic}, nil); err != nil {
+		return err
+	}
 
-	sigchan := make(chan os.Signal)
-	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
+	// Запуск воркеров
+	for i := 0; i < c.workers; i++ {
+		c.wg.Add(1)
+		go c.worker(handler)
+	}
 
+	// Чтение сообщений
+	go c.readMessages()
+
+	return nil
+}
+
+func (c *Consumer) readMessages() {
 	for {
 		select {
-		case sig := <-sigchan:
-			fmt.Printf("kafka:signal %v операционной системы off", sig)
+		case <-c.shutdownCh:
 			return
 		default:
-			msg, err := consumer.ReadMessage(-1)
-			if err == nil {
-				handleMessage(msg.Value)
-			} else {
-				log.Printf("kafka:error reading message: %v\n", err)
+			msg, err := c.consumer.ReadMessage(100 * time.Millisecond)
+			if err != nil {
+				if err.(kafka.Error).Code() == kafka.ErrTimedOut {
+					continue
+				}
+				log.Printf("Consumer error: %v", err)
+				continue
 			}
+			c.messageCh <- msg
 		}
 	}
 }
-func handleMessage(msg []byte) {
-	fmt.Printf("kafka:принято - %s\n", string(msg))
+
+func (c *Consumer) worker(handler func(*kafka.Message) error) {
+	defer c.wg.Done()
+
+	for msg := range c.messageCh {
+		if err := handler(msg); err != nil {
+			log.Printf("Failed to handle message: %v", err)
+		}
+	}
+}
+
+// Close останавливает потребителя
+func (c *Consumer) Close() {
+	close(c.shutdownCh)
+	close(c.messageCh)
+	c.wg.Wait()
+	_ = c.consumer.Close()
 }
