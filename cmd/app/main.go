@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/IBM/sarama"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"log"
@@ -10,18 +11,21 @@ import (
 	"product/internal/config"
 	"product/internal/infrastructure/kafka"
 	"product/internal/infrastructure/models"
+	"sync"
 	"syscall"
+	"time"
 )
 
 func main() {
-	// log
-	logger := log.Logger{}
-	// conf
+	// логгер
+	logger := log.New(os.Stderr, "prefix: ", log.LstdFlags)
+	// конфиг
 	connStr, err := config.ParseConfig()
 	if err != nil {
 		logger.Fatal("parse err: ошибка в парсинге, невозможно запарсить конфиг")
 	}
-	// db init open
+
+	// открываем бд
 	db, err := gorm.Open(postgres.Open(connStr), &gorm.Config{})
 	if err != nil {
 		logger.Fatal("open db: ошибка при открытии соединения с бд")
@@ -29,30 +33,59 @@ func main() {
 	logger.Println("open db: успешное подключение к бд")
 	// если нет таблицы, создаём её
 	if err = db.AutoMigrate(&models.Product{}); err != nil {
-		logger.Println("open db: ошибка с применением миграции")
+		log.Printf("open db: ошибка с применением миграции: %v", err)
 	}
-	fmt.Println("успешно")
 
-	// kafka cfg
-	configKafka := kafka.NewConfig("localhost:9093", "product-service-group")
-	// 3 workers
-	consumer, err := kafka.NewConsumer(configKafka, 3)
-	if err != nil {
-		log.Fatal("main:ошибка в загрузке консьюмера")
-	}
+	// kafka
+	consumer := kafka.CreateKafkaConsumer()
 	defer consumer.Close()
-	// debezium handle
-	handler := kafka.NewDebeziumHandler()
-	// subscribe topic
-	if err := consumer.Subscribe("dbz.public.products", handler); err != nil {
-		log.Fatalf("Failed to subscribe: %v", err)
+
+	// Подписываемся на топик
+	partitionConsumer, err := consumer.ConsumePartition("dbz.public.products", 0, sarama.OffsetNewest)
+	if err != nil {
+		log.Fatal("Ошибка при подписке на топик:", err)
+	}
+	defer partitionConsumer.Close()
+	// Канал для сообщений
+	messageChan := make(chan *sarama.ConsumerMessage)
+
+	// Запуск воркеров
+	var wg sync.WaitGroup
+	numWorkers := 5
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go kafka.Worker(i, messageChan, &wg)
 	}
 
-	// создаем канал для получения сигналов о завершении работы программы
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM) // Перехватываем сигналы завершения
+	go func() {
+		for message := range partitionConsumer.Messages() {
+			fmt.Printf("Получено сообщение: %s\n", string(message.Value))
+			messageChan <- message
+		}
+	}()
 
-	// ожидаем сигнала для завершения работы
-	<-stop
-	log.Println("Завершение работы программы.")
+	// Таймер на 5 секунд
+	timer := time.NewTimer(50 * time.Second)
+
+	// Ожидаем сигнал завершения или таймер
+	select {
+	case <-timer.C:
+		fmt.Println("Время вышло, завершение программы...")
+		close(messageChan) // Закрываем канал для воркеров
+	case <-waitForInterrupt():
+		fmt.Println("Получен сигнал завершения, завершаем программу...")
+		close(messageChan) // Закрываем канал для воркеров
+	}
+
+	// Ожидаем завершения всех воркеров
+	wg.Wait()
+
+	fmt.Println("Программа завершена")
+}
+
+// Функция для обработки сигнала завершения (Ctrl+C)
+func waitForInterrupt() chan os.Signal {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	return sigChan
 }
