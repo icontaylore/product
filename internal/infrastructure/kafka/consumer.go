@@ -1,89 +1,27 @@
 package kafka
 
 import (
-	"gopkg.in/confluentinc/confluent-kafka-go.v1/kafka"
+	"fmt"
+	"github.com/IBM/sarama"
 	"log"
 	"sync"
-	"time"
 )
 
-// Consumer обрабатывает сообщения из Kafka
-type Consumer struct {
-	consumer   *kafka.Consumer
-	workers    int
-	messageCh  chan *kafka.Message
-	shutdownCh chan struct{}
-	wg         sync.WaitGroup
-}
+func CreateKafkaConsumer() sarama.Consumer {
+	config := sarama.NewConfig()
+	config.Consumer.Return.Errors = true
 
-// NewConsumer создает новый экземпляр Consumer
-func NewConsumer(cfg *Config, workers int) (*Consumer, error) {
-	kafkaConfig := cfg.CreateConsumerConfig()
-
-	c, err := kafka.NewConsumer(kafkaConfig)
+	consumer, err := sarama.NewConsumer([]string{"localhost:9093"}, config)
 	if err != nil {
-		return nil, err
+		log.Fatal("Ошибка при создании Kafka consumer:", err)
 	}
 
-	return &Consumer{
-		consumer:   c,
-		workers:    workers,
-		messageCh:  make(chan *kafka.Message, workers*3),
-		shutdownCh: make(chan struct{}),
-	}, nil
+	return consumer
 }
 
-// Subscribe подписывается на топик и запускает обработчики
-func (c *Consumer) Subscribe(topic string, handler func(*kafka.Message) error) error {
-	if err := c.consumer.SubscribeTopics([]string{topic}, nil); err != nil {
-		return err
+func Worker(id int, messageChan chan *sarama.ConsumerMessage, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for message := range messageChan {
+		fmt.Printf("Worker %d обрабатывает сообщение: %s\n", id, string(message.Value))
 	}
-
-	// Запуск воркеров
-	for i := 0; i < c.workers; i++ {
-		c.wg.Add(1)
-		go c.worker(handler)
-	}
-
-	// Чтение сообщений
-	go c.readMessages()
-
-	return nil
-}
-
-func (c *Consumer) readMessages() {
-	for {
-		select {
-		case <-c.shutdownCh:
-			return
-		default:
-			msg, err := c.consumer.ReadMessage(100 * time.Millisecond)
-			if err != nil {
-				if err.(kafka.Error).Code() == kafka.ErrTimedOut {
-					continue
-				}
-				log.Printf("Consumer error: %v", err)
-				continue
-			}
-			c.messageCh <- msg
-		}
-	}
-}
-
-func (c *Consumer) worker(handler func(*kafka.Message) error) {
-	defer c.wg.Done()
-
-	for msg := range c.messageCh {
-		if err := handler(msg); err != nil {
-			log.Printf("Failed to handle message: %v", err)
-		}
-	}
-}
-
-// Close останавливает потребителя
-func (c *Consumer) Close() {
-	close(c.shutdownCh)
-	close(c.messageCh)
-	c.wg.Wait()
-	_ = c.consumer.Close()
 }
