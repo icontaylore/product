@@ -22,10 +22,18 @@ func NewRepoInterface(db *gorm.DB) RepoInterface {
 }
 
 func (p *ProductRepository) Create(product *models.Product) error {
-	result := p.db.Create(product)
-	if result.Error != nil {
-		return fmt.Errorf("repo:не удалось создать продукт")
+	err := p.db.Transaction(func(tx *gorm.DB) error {
+		result := p.db.Create(product)
+		if result.Error != nil {
+			return fmt.Errorf("repo:не удалось создать продукт")
+		}
+		return nil
+	})
+
+	if err != nil {
+		return err
 	}
+
 	return nil
 }
 
@@ -43,10 +51,17 @@ func (p *ProductRepository) Read(id uint) error {
 }
 
 func (p *ProductRepository) Update(product *models.Product) error {
-	result := p.db.Save(product)
-	if result.Error != nil {
-		return fmt.Errorf("repo:не удалось обновить продукт")
+	err := p.db.Transaction(func(tx *gorm.DB) error {
+		result := p.db.Save(product)
+		if result.Error != nil {
+			return fmt.Errorf("repo:не удалось обновить продукт")
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
+
 	return nil
 }
 func (p *ProductRepository) Delete(id uint) error {

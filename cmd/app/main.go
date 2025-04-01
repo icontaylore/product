@@ -35,7 +35,7 @@ func main() {
 
 	// kafka
 	topic := "dbz.public.products"
-	logger.Println("Запуск потребителя для топика:", topic)
+	logger.Println("kafka topic:потребитель для топика:", topic)
 	go kafka.StartConsumer(topic)
 
 	// Создаем канал для получения сигналов о завершении работы программы

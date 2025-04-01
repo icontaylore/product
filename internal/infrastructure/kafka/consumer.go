@@ -56,7 +56,7 @@ func StartConsumer(topic string) {
 			if err == nil {
 				handleMessage(msg.Value)
 			} else {
-				log.Printf("Error reading message: %v\n", err)
+				log.Printf("kafka:error reading message: %v\n", err)
 			}
 		}
 	}
