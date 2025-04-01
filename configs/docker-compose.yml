@@ -37,8 +37,8 @@ services:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     ports:
-      - "9093:9093"  # внутренний доступ
-      - "9094:9094"  # внешний доступ
+      - "9093:9093"
+      - "9094:9094"
     networks:
       - debezium
 
