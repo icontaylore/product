@@ -13,6 +13,7 @@
     "slot.name": "debezium_slot",
     "publication.name": "dbz_publication",
     "topic.prefix": "dbz",
-    "poll.interval.ms": "5000"
+    "poll.interval.ms": "5000",
+    "database.history.kafka.bootstrap.servers": "kafka:9093"
   }
 }

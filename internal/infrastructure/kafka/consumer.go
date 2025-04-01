@@ -11,7 +11,7 @@ func CreateKafkaConsumer() sarama.Consumer {
 	config := sarama.NewConfig()
 	config.Consumer.Return.Errors = true
 
-	consumer, err := sarama.NewConsumer([]string{"localhost:9093"}, config)
+	consumer, err := sarama.NewConsumer([]string{"localhost:9094"}, config)
 	if err != nil {
 		log.Fatal("Ошибка при создании Kafka consumer:", err)
 	}

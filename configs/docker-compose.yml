@@ -37,8 +37,8 @@ services:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     ports:
-      - "9093:9093"
-      - "9094:9094"
+      - "9093:9093"  # внутренний доступ
+      - "9094:9094"  # внешний доступ
     networks:
       - debezium
 
@@ -47,7 +47,7 @@ services:
     depends_on:
       - kafka
     environment:
-      BOOTSTRAP_SERVERS: ${CONNECT_BOOTSTRAP_SERVERS}
+      BOOTSTRAP_SERVERS: kafka:9093
       GROUP_ID: ${CONNECT_GROUP_ID}
       CONFIG_STORAGE_TOPIC: ${CONNECT_CONFIG_STORAGE_TOPIC}
       OFFSET_STORAGE_TOPIC: ${CONNECT_OFFSET_STORAGE_TOPIC}
