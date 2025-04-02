@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"product/internal/config"
+	"product/internal/infrastructure/elasticsearch"
 	"product/internal/infrastructure/kafka"
 	"product/internal/infrastructure/models"
 	"syscall"
@@ -33,15 +34,38 @@ func main() {
 		log.Printf("open db: ошибка с применением миграции: %v", err)
 	}
 
-	// kafka
+	// elastic init
+	elastic, err := elasticsearch.NewClient(elasticsearch.Config{
+		Addresses: []string{"http://localhost:9200"},
+	})
+	if err != nil {
+		log.Fatal("main:addres lagging elastic")
+	}
+	// elastic index
+	elasticService := elasticsearch.NewService(elastic, "product-index")
+	// Проверить, существует ли индекс (опционально)
+	res, err := elastic.Indices.Exists([]string{"product-index"})
+	if err != nil {
+		log.Fatal("Ошибка проверки индекса:", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == 200 {
+		fmt.Println("Индекс существует!")
+	} else if res.StatusCode == 404 {
+		fmt.Println("Индекс не найден.")
+	}
+
+	// kafka init
 	configKafka := kafka.GoConfigure("dbz.public.products", "localhost:9094", 5)
 	configKafka.CreateKafkaConsumer()
+	configKafka.SetElasticService(elasticService)
 
 	if err = configKafka.SubscribeTopic(); err != nil {
 		log.Fatal("main:ошибка подписки на топик")
 	}
 	defer configKafka.Consumer.Close()
-	// Канал для сообщений
+
 	// Запуск воркеров
 	configKafka.WorkerPoolStart()
 
