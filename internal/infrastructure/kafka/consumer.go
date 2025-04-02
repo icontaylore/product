@@ -1,27 +1,30 @@
 package kafka
 
 import (
-	"fmt"
 	"github.com/IBM/sarama"
 	"log"
-	"sync"
 )
 
-func CreateKafkaConsumer() sarama.Consumer {
+func (k *KafkaSettings) SubscribeTopic() error {
+	partitionCons, err := k.Consumer.ConsumePartition(k.Topic, 0, sarama.OffsetNewest)
+	if err != nil {
+		log.Fatal("main:невозможно организовать партицию")
+	}
+	k.MessageChan = partitionCons.Messages()
+	k.PartitionCons = partitionCons
+
+	return nil
+}
+
+func (k *KafkaSettings) CreateKafkaConsumer() error {
 	config := sarama.NewConfig()
 	config.Consumer.Return.Errors = true
 
-	consumer, err := sarama.NewConsumer([]string{"localhost:9094"}, config)
+	consumer, err := sarama.NewConsumer([]string{k.Host}, config)
 	if err != nil {
-		log.Fatal("Ошибка при создании Kafka consumer:", err)
+		defer log.Fatal("kafka:ошибка при создании Kafka consumer:", err)
+		return err
 	}
-
-	return consumer
-}
-
-func Worker(id int, messageChan chan *sarama.ConsumerMessage, wg *sync.WaitGroup) {
-	defer wg.Done()
-	for message := range messageChan {
-		fmt.Printf("Worker %d обрабатывает сообщение: %s\n", id, string(message.Value))
-	}
+	k.Consumer = consumer
+	return nil
 }
