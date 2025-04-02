@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"sync"
@@ -21,13 +22,16 @@ func (k *KafkaSettings) WorkerPoolStart() {
 func (k *KafkaSettings) worker(id int, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for message := range k.MessageChan {
+		doc := map[string]interface{}{
+			"key":       string(message.Key),
+			"value":     string(message.Value),
+			"partition": message.Partition,
+			"offset":    message.Offset,
+			"timestamp": message.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
+		}
+		if err := k.ElasticService.IndexDocument(context.Background(), doc); err != nil {
+			log.Printf("kafka+elastic:workerpool warn")
+		}
 		fmt.Printf("worker-pool:worker %d обрабатывает сообщение\n", id)
-		log.Printf(
-			"Получено сообщение: ключ=%s, значение=%s, партиция=%d, оффсет=%d",
-			string(message.Key),
-			string(message.Value),
-			message.Partition,
-			message.Offset,
-		)
 	}
 }
