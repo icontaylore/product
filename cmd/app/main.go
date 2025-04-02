@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/IBM/sarama"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"log"
@@ -11,9 +10,7 @@ import (
 	"product/internal/config"
 	"product/internal/infrastructure/kafka"
 	"product/internal/infrastructure/models"
-	"sync"
 	"syscall"
-	"time"
 )
 
 func main() {
@@ -37,48 +34,25 @@ func main() {
 	}
 
 	// kafka
-	consumer := kafka.CreateKafkaConsumer()
-	defer consumer.Close()
+	configKafka := kafka.GoConfigure("dbz.public.products", "localhost:9094", 5)
+	configKafka.CreateKafkaConsumer()
 
-	// Подписываемся на топик
-	partitionConsumer, err := consumer.ConsumePartition("dbz.public.products", 0, sarama.OffsetNewest)
-	if err != nil {
-		log.Fatal("Ошибка при подписке на топик:", err)
+	if err = configKafka.SubscribeTopic(); err != nil {
+		log.Fatal("main:ошибка подписки на топик")
 	}
-	defer partitionConsumer.Close()
+	defer configKafka.Consumer.Close()
 	// Канал для сообщений
-	messageChan := make(chan *sarama.ConsumerMessage)
-
 	// Запуск воркеров
-	var wg sync.WaitGroup
-	numWorkers := 5
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go kafka.Worker(i, messageChan, &wg)
-	}
-
-	go func() {
-		for message := range partitionConsumer.Messages() {
-			fmt.Printf("Получено сообщение: %s\n", string(message.Value))
-			messageChan <- message
-		}
-	}()
-
-	// Таймер на 5 секунд
-	timer := time.NewTimer(50 * time.Second)
+	configKafka.WorkerPoolStart()
 
 	// Ожидаем сигнал завершения или таймер
 	select {
-	case <-timer.C:
-		fmt.Println("Время вышло, завершение программы...")
-		close(messageChan) // Закрываем канал для воркеров
 	case <-waitForInterrupt():
 		fmt.Println("Получен сигнал завершения, завершаем программу...")
-		close(messageChan) // Закрываем канал для воркеров
+		if configKafka.PartitionCons != nil {
+			configKafka.PartitionCons.Close()
+		}
 	}
-
-	// Ожидаем завершения всех воркеров
-	wg.Wait()
 
 	fmt.Println("Программа завершена")
 }
