@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"product/internal/config"
-	"product/internal/infrastructure/elasticsearch"
 	"product/internal/infrastructure/kafka"
 	"product/internal/infrastructure/models"
 	"syscall"
@@ -34,47 +33,27 @@ func main() {
 		log.Printf("open db: ошибка с применением миграции: %v", err)
 	}
 
-	// elastic init
-	elastic, err := elasticsearch.NewClient(elasticsearch.Config{
-		Addresses: []string{"http://localhost:9200"},
-	})
-	if err != nil {
-		log.Fatal("main:addres lagging elastic")
+	// kafka setup
+	brokers := []string{"localhost:9094"}
+	topic := "dbz.public.products"
+	// Consumer
+	kf := kafka.KafkaGetConfig(brokers, topic)
+	if err = kf.NewConsumer(); err != nil {
+		log.Fatal("main:трабл с созданием консьюмера")
 	}
-	// elastic index
-	elasticService := elasticsearch.NewService(elastic, "product-index")
-	// Проверить, существует ли индекс (опционально)
-	res, err := elastic.Indices.Exists([]string{"product-index"})
-	if err != nil {
-		log.Fatal("Ошибка проверки индекса:", err)
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode == 200 {
-		fmt.Println("Индекс существует!")
-	} else if res.StatusCode == 404 {
-		fmt.Println("Индекс не найден.")
+	defer kf.Consumer.Close()
+	// Subscribe
+	if err = kf.SubscribeTopic(); err != nil {
+		log.Fatal("main:subs make err")
 	}
 
-	// kafka init
-	configKafka := kafka.GoConfigure("dbz.public.products", "localhost:9094", 5)
-	configKafka.CreateKafkaConsumer()
-	configKafka.SetElasticService(elasticService)
-
-	if err = configKafka.SubscribeTopic(); err != nil {
-		log.Fatal("main:ошибка подписки на топик")
-	}
-	defer configKafka.Consumer.Close()
-
-	// Запуск воркеров
-	configKafka.WorkerPoolStart()
 
 	// Ожидаем сигнал завершения или таймер
 	select {
 	case <-waitForInterrupt():
 		fmt.Println("Получен сигнал завершения, завершаем программу...")
-		if configKafka.PartitionCons != nil {
-			configKafka.PartitionCons.Close()
+		if kf.PartitionCons != nil {
+			kf.PartitionCons.Close()
 		}
 	}
 
