@@ -1,13 +1,15 @@
 package kafka
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"log"
-	"strings"
-	"sync"
+	"fmt"
 	"github.com/IBM/sarama"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
+	"log"
+	"strconv"
+	"sync"
 )
 
 func (k *KafkaSettings) NewConsumer() error {
@@ -32,66 +34,127 @@ func (k *KafkaSettings) SubscribeTopic() error {
 
 func (k *KafkaSettings) WorkerPool(w int, indexName string) {
 	wg := sync.WaitGroup{}
-	for i:=0;i<w;i++{
-		go func()  {
+	for i := 0; i < w; i++ {
+		go func() {
 			wg.Add(1)
 			defer wg.Done()
-			k.worker(i,indexName)
+			k.worker(i, indexName)
 		}()
 	}
 	wg.Wait()
 }
 
-
-func (k *KafkaSettings) worker(id int,indexName string) {
+func (k *KafkaSettings) worker(id int, indexName string) {
 	for msg := range k.PartitionCons.Messages() {
-		var kafkaMsg KafkaMessage
-		if err := json.Unmarshal(msg.Value,&kafkaMsg);err != nil {
-            log.Printf("worker %d:oшибка парсинга JSON: %v\nRaw data: %s", id, err, msg.Value)
-            continue
-        }
-
-		esp := fastFormat(&kafkaMsg)
-		esp.Metadata.KafkaTopic = msg.Topic
-		esp.Metadata.KafkaOffset = msg.Offset
-		esp.Metadata.KafkaPartition = msg.Partition
-
-
-		// go to elastic
-		jsonDoc,_ := json.Marshal(esp)
-		req := esapi.IndexRequest{
-			Index: indexName,
-			Body: strings.NewReader(string(jsonDoc)),
+		var debezMessage DebeziumMessage
+		if err := json.Unmarshal(msg.Value, &debezMessage); err != nil {
+			log.Printf("worker %d:oшибка парсинга JSON: %v\nRaw data: %s", id, err, msg.Value)
+			continue
 		}
 
-		res, err := req.Do(context.Background(), k.ESClient)
-        if err != nil {
-            log.Printf("Worker %d:oшибка отправки в ES: %v", id, err)
-            continue
-        }
-        defer res.Body.Close()
-
-        if res.IsError() {
-            log.Printf("Worker %d:oшибка Elasticsearch: %s", id, res.String())
-        } else {
-            log.Printf("Worker %d:товар %d отправлен в ES", id, kafkaMsg.ID)
-        }
+		log.Printf("worker %d работает\n", id)
+		switch debezMessage.Payload.Op {
+		case "c":
+			product := parseProduct(debezMessage.Payload.After)
+			if err := k.sendToElastic(product, "index", indexName); err != nil {
+				log.Println("consumer kafka:create errr")
+			}
+		case "u":
+			product := parseProduct(debezMessage.Payload.After)
+			if err := k.sendToElastic(product, "update", indexName); err != nil {
+				log.Println("consumer kafka:update err")
+			}
+		case "d":
+			if debezMessage.Payload.Before != nil {
+				k.deleteFromElastic(debezMessage.Payload.Before.ID)
+			}
+		}
 	}
 }
 
-func fastFormat(kafkaMsg *KafkaMessage) ESProduct {
-	esDoc := ESProduct{
-		ID:            kafkaMsg.ID,
-		Name:          kafkaMsg.Name,
-		Description:   kafkaMsg.Description,
-		Price:         kafkaMsg.Price,
-		StockQuantity: kafkaMsg.StockQuantity,
-		Metadata: struct {
-			KafkaTopic     string `json:"kafka_topic"`
-			KafkaPartition int32  `json:"kafka_partition"`
-			KafkaOffset    int64  `json:"kafka_offset"`
-		}{
-		},
+func parseProduct(p *KafkaMessage) map[string]interface{} {
+	price, _ := decodeDebeziumDecimal(p.Price)
+
+	return map[string]interface{}{
+		"id":             p.ID,
+		"name":           p.Name,
+		"description":    p.Description,
+		"price":          price,
+		"stock_quantity": p.StockQuantity,
 	}
-	return esDoc
+}
+
+func (k *KafkaSettings) sendToElastic(doc map[string]interface{}, op, indexName string) error {
+	ctx := context.Background()
+	docID := fmt.Sprintf("%v", doc["id"])
+	var req esapi.Request
+	var err error
+
+	switch op {
+	case "index":
+		var buf bytes.Buffer
+		if err = json.NewEncoder(&buf).Encode(doc); err != nil {
+			return err
+		}
+		req = esapi.IndexRequest{
+			Index:      indexName,
+			DocumentID: docID,
+			Body:       &buf,
+			Refresh:    "true",
+		}
+	case "update": // Частичное обновление
+		var buf bytes.Buffer
+		updateBody := map[string]interface{}{
+			"doc": doc,
+		}
+		if err = json.NewEncoder(&buf).Encode(updateBody); err != nil {
+			return err
+		}
+		req = esapi.UpdateRequest{
+			Index:      indexName,
+			DocumentID: docID,
+			Body:       &buf,
+			Refresh:    "true",
+		}
+	default:
+		return fmt.Errorf("unknown operation: %s", op)
+	}
+
+	res, err := req.Do(ctx, k.ESClient)
+	if err != nil {
+		return fmt.Errorf("Elasticsearch request failed: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("Elasticsearch error response: %s", res.String())
+	}
+
+	log.Printf("Successfully performed %s operation for document ID %s", op, docID)
+	return nil
+}
+
+func (k *KafkaSettings) deleteFromElastic(id uint) error {
+	idInt := strconv.Itoa(int(id))
+
+	var req esapi.Request
+	var err error
+
+	req = esapi.DeleteRequest{
+		Index:      k.IndexName,
+		DocumentID: idInt,
+		Refresh:    "true",
+	}
+	res, err := req.Do(context.Background(), k.ESClient)
+	if err != nil {
+		return fmt.Errorf("Elasticsearch request failed: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("Elasticsearch error response: %s", res.String())
+	}
+
+	log.Printf("Successfully performed delete operation for document ID %s", k.IndexName)
+	return nil
 }

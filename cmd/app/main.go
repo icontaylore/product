@@ -36,8 +36,6 @@ func main() {
 		log.Printf("open db: ошибка с применением миграции: %v", err)
 	}
 
-
-
 	// Elastic
 	addresElastic := []string{"http://localhost:9200"}
 	// Elastic Client
@@ -48,8 +46,6 @@ func main() {
 	// Elastic Create Index
 	indexName := "product_index"
 	clientElastic.CreateIndex(indexName)
-	// create pipeline
-	// KafkaAdd
 
 	// Kafka setup
 	brokers := []string{"localhost:9094"}
@@ -59,8 +55,11 @@ func main() {
 	if err = kf.NewConsumer(); err != nil {
 		log.Fatal("main:трабл с созданием консьюмера")
 	}
-	// Клиента эластика в кафку
+
+	// Грузим внешние данные
 	kf.ESClient = clientElastic.Client
+	kf.IndexName = indexName
+
 	defer kf.Consumer.Close()
 	// Subscribe
 	if err = kf.SubscribeTopic(); err != nil {
@@ -68,10 +67,7 @@ func main() {
 	}
 	// Read kafka + index name
 	worker := 5
-	kf.WorkerPool(worker,indexName)
-
-
-
+	kf.WorkerPool(worker, indexName)
 
 	// Ожидаем сигнал завершения или таймер
 	select {
