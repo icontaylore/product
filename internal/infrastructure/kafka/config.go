@@ -1,21 +1,20 @@
 package kafka
 
-import "github.com/IBM/sarama"
+import (
+	"github.com/IBM/sarama"
+)
 
 type KafkaSettings struct {
 	Consumer      sarama.Consumer
-	Worker        uint
+	Addres        []string
 	Topic         string
-	Host          string
-	MessageChan   <-chan *sarama.ConsumerMessage
-	PartitionCons sarama.PartitionConsumer // контроль закрытия
+	Message       <-chan *sarama.ConsumerMessage
+	PartitionCons sarama.PartitionConsumer
 }
 
-func GoConfigure(top, host string, worker uint) *KafkaSettings {
+func KafkaGetConfig(arr []string, s string) *KafkaSettings {
 	return &KafkaSettings{
-		Worker:      worker,
-		Topic:       top,
-		Host:        host,
-		MessageChan: make(chan *sarama.ConsumerMessage),
+		Addres: arr,
+		Topic:  s,
 	}
 }

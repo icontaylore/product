@@ -33,24 +33,27 @@ func main() {
 		log.Printf("open db: ошибка с применением миграции: %v", err)
 	}
 
-	// kafka
-	configKafka := kafka.GoConfigure("dbz.public.products", "localhost:9094", 5)
-	configKafka.CreateKafkaConsumer()
-
-	if err = configKafka.SubscribeTopic(); err != nil {
-		log.Fatal("main:ошибка подписки на топик")
+	// kafka setup
+	brokers := []string{"localhost:9094"}
+	topic := "dbz.public.products"
+	// Consumer
+	kf := kafka.KafkaGetConfig(brokers, topic)
+	if err = kf.NewConsumer(); err != nil {
+		log.Fatal("main:трабл с созданием консьюмера")
 	}
-	defer configKafka.Consumer.Close()
-	// Канал для сообщений
-	// Запуск воркеров
-	configKafka.WorkerPoolStart()
+	defer kf.Consumer.Close()
+	// Subscribe
+	if err = kf.SubscribeTopic(); err != nil {
+		log.Fatal("main:subs make err")
+	}
+
 
 	// Ожидаем сигнал завершения или таймер
 	select {
 	case <-waitForInterrupt():
 		fmt.Println("Получен сигнал завершения, завершаем программу...")
-		if configKafka.PartitionCons != nil {
-			configKafka.PartitionCons.Close()
+		if kf.PartitionCons != nil {
+			kf.PartitionCons.Close()
 		}
 	}
 
