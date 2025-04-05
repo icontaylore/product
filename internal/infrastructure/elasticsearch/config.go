@@ -2,8 +2,9 @@ package elasticsearch
 
 import (
 	"fmt"
-	"github.com/elastic/go-elasticsearch/v8"
 	"log"
+
+	"github.com/elastic/go-elasticsearch/v8"
 )
 
 type Config struct {
@@ -14,29 +15,30 @@ type Config struct {
 	APIKey    string
 }
 
-func NewClient(cfg Config) (*elasticsearch.Client, error) {
-	esCfg := elasticsearch.Config{
-		Addresses: cfg.Addresses,
-		Username:  cfg.Username,
-		Password:  cfg.Password,
-		CloudID:   cfg.CloudID,
-		APIKey:    cfg.APIKey,
-	}
-	client, err := elasticsearch.NewClient(esCfg)
-	if err != nil {
-		return nil, err
-	}
-
-	res, err := client.Ping()
-	if err != nil {
-		return nil, fmt.Errorf("elastic:failed to ping Elasticsearch: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return nil, fmt.Errorf("elastic:elasticsearch ping error: %s", res.String())
-	}
-
-	log.Println("elastic:successfully connected to Elasticsearch")
-	return client, nil
+type ElasticService struct {
+	Client *elasticsearch.Client
+	Mapping string
 }
+
+func NewClientElastic(add []string) *ElasticService {
+	cfg := elasticsearch.Config{
+		Addresses: add,
+	}
+
+	client,err := elasticsearch.NewClient(cfg)
+	if err != nil {
+		log.Println("elastic:ошибка создания клиента")
+	}
+	res,err := client.Ping()
+	if err != nil {
+		log.Println("elastic:нет пинга")
+	}
+	if res.IsError() {
+		fmt.Errorf("ping error: %s", res.String())
+        return nil
+    }
+	return &ElasticService{
+		Client: client,
+	}
+}
+
