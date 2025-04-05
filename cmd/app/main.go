@@ -2,27 +2,30 @@ package main
 
 import (
 	"fmt"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 	"log"
 	"os"
 	"os/signal"
 	"product/internal/config"
+	"product/internal/infrastructure/elasticsearch"
 	"product/internal/infrastructure/kafka"
 	"product/internal/infrastructure/models"
 	"syscall"
+
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 func main() {
-	// логгер
+	// Lоgger
 	logger := log.New(os.Stderr, "prefix: ", log.LstdFlags)
-	// конфиг
+
+	// Kонфиг запуска
 	connStr, err := config.ParseConfig()
 	if err != nil {
 		logger.Fatal("parse err: ошибка в парсинге, невозможно запарсить конфиг")
 	}
 
-	// открываем бд
+	// Open db
 	db, err := gorm.Open(postgres.Open(connStr), &gorm.Config{})
 	if err != nil {
 		logger.Fatal("open db: ошибка при открытии соединения с бд")
@@ -33,7 +36,22 @@ func main() {
 		log.Printf("open db: ошибка с применением миграции: %v", err)
 	}
 
-	// kafka setup
+
+
+	// Elastic
+	addresElastic := []string{"http://localhost:9200"}
+	// Elastic Client
+	clientElastic := elasticsearch.NewClientElastic(addresElastic)
+	if err != nil {
+		log.Fatal("main:elastic conn err")
+	}
+	// Elastic Create Index
+	indexName := "product_index"
+	clientElastic.CreateIndex(indexName)
+	// create pipeline
+	// KafkaAdd
+
+	// Kafka setup
 	brokers := []string{"localhost:9094"}
 	topic := "dbz.public.products"
 	// Consumer
@@ -41,11 +59,18 @@ func main() {
 	if err = kf.NewConsumer(); err != nil {
 		log.Fatal("main:трабл с созданием консьюмера")
 	}
+	// Клиента эластика в кафку
+	kf.ESClient = clientElastic.Client
 	defer kf.Consumer.Close()
 	// Subscribe
 	if err = kf.SubscribeTopic(); err != nil {
 		log.Fatal("main:subs make err")
 	}
+	// Read kafka + index name
+	worker := 5
+	kf.WorkerPool(worker,indexName)
+
+
 
 
 	// Ожидаем сигнал завершения или таймер
