@@ -1,4 +1,18 @@
 services:
+  protoc-gen:
+    image: namely/protoc-all
+    container_name: protoc-gen-container
+    volumes:
+      - ../api/product:/workspace/proto
+      - ../generated_proto:/workspace/gen
+    entrypoint: [
+      "protoc",
+      "-I=/workspace/proto",
+      "--go_out=/workspace/gen",
+      "--go-grpc_out=/workspace/gen",
+      "/workspace/proto/product.proto"
+    ]
+
   postgres:
     image: postgres:13
     environment:

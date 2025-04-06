@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package pb;
+
+option go_package = "/workspace/gen/product";
+
+service ProductService {
+  rpc CreateProduct(CreateProductReq) returns (CreateProductResp);
+  rpc GetProduct(GetProductReq) returns (GetProductResp);
+  rpc UpdateProduct(UpdateProductReq) returns (UpdateProductResp);
+  rpc DeleteProduct(DeleteProductReq) returns (DeleteProductResp);
+}
+
+
+message CreateProductReq {
+  string name = 1;
+  string description = 2;
+  float  price = 3;
+  int32  stock_quantity = 4;
+}
+
+message CreateProductResp {
+  bool success = 1;
+}
+
+message GetProductReq {
+  int32 id = 1;
+}
+
+message GetProductResp {
+  int32 id = 1;             // ID продукта
+  string name = 2;          // Название продукта
+  string description = 3;   // Описание продукта
+  float price = 4;          // Цена продукта
+  int32 stock_quantity = 5; // Количество на складе
+}
+
+message UpdateProductReq {
+  int32 id = 1;             // ID продукта для обновления
+  string name = 2;          // Новое название продукта
+  string description = 3;   // Новое описание продукта
+  float price = 4;          // Новая цена продукта
+  int32 stock_quantity = 5; // Новое количество на складе
+}
+
+// Ответ на обновление продукта
+message UpdateProductResp {
+  bool success = 1;    // Успех операции
+  string message = 2;  // Дополнительное сообщение
+}
+
+
+// Запрос на удаление продукта
+message DeleteProductReq {
+  int32 id = 1;  // ID продукта для удаления
+}
+
+// Ответ на удаление продукта
+message DeleteProductResp {
+  bool success = 1;  // Успешность операции
+}

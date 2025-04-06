@@ -32,13 +32,13 @@ func (k *KafkaSettings) SubscribeTopic() error {
 	return nil
 }
 
-func (k *KafkaSettings) WorkerPool(w int, indexName string) {
+func (k *KafkaSettings) WorkerPool(w int) {
 	wg := sync.WaitGroup{}
 	for i := 0; i < w; i++ {
 		go func() {
 			wg.Add(1)
 			defer wg.Done()
-			k.worker(i, indexName)
+			k.worker(i, k.IndexName)
 		}()
 	}
 	wg.Wait()
@@ -48,7 +48,7 @@ func (k *KafkaSettings) worker(id int, indexName string) {
 	for msg := range k.PartitionCons.Messages() {
 		var debezMessage DebeziumMessage
 		if err := json.Unmarshal(msg.Value, &debezMessage); err != nil {
-			log.Printf("worker %d:oшибка парсинга JSON: %v\nRaw data: %s", id, err, msg.Value)
+			log.Printf("worker %d:удаление из бд: %v\nRaw data: %s", id, err, msg.Value)
 			continue
 		}
 
@@ -69,18 +69,6 @@ func (k *KafkaSettings) worker(id int, indexName string) {
 				k.deleteFromElastic(debezMessage.Payload.Before.ID)
 			}
 		}
-	}
-}
-
-func parseProduct(p *KafkaMessage) map[string]interface{} {
-	price, _ := decodeDebeziumDecimal(p.Price)
-
-	return map[string]interface{}{
-		"id":             p.ID,
-		"name":           p.Name,
-		"description":    p.Description,
-		"price":          price,
-		"stock_quantity": p.StockQuantity,
 	}
 }
 
@@ -117,20 +105,20 @@ func (k *KafkaSettings) sendToElastic(doc map[string]interface{}, op, indexName 
 			Refresh:    "true",
 		}
 	default:
-		return fmt.Errorf("unknown operation: %s", op)
+		return fmt.Errorf("worker:unknown operation: %s", op)
 	}
 
 	res, err := req.Do(ctx, k.ESClient)
 	if err != nil {
-		return fmt.Errorf("Elasticsearch request failed: %w", err)
+		return fmt.Errorf("worker:request failed: %w", err)
 	}
 	defer res.Body.Close()
 
 	if res.IsError() {
-		return fmt.Errorf("Elasticsearch error response: %s", res.String())
+		return fmt.Errorf("worker:error response: %s", res.String())
 	}
 
-	log.Printf("Successfully performed %s operation for document ID %s", op, docID)
+	log.Printf("worker-pool:удачная операция %s ID %s", op, docID)
 	return nil
 }
 
@@ -147,14 +135,14 @@ func (k *KafkaSettings) deleteFromElastic(id uint) error {
 	}
 	res, err := req.Do(context.Background(), k.ESClient)
 	if err != nil {
-		return fmt.Errorf("Elasticsearch request failed: %w", err)
+		return fmt.Errorf("worker delete:request failed: %w", err)
 	}
 	defer res.Body.Close()
 
 	if res.IsError() {
-		return fmt.Errorf("Elasticsearch error response: %s", res.String())
+		return fmt.Errorf("worker delete:error response: %s", res.String())
 	}
 
-	log.Printf("Successfully performed delete operation for document ID %s", k.IndexName)
+	log.Printf("worker delete:performed delete operation for document ID %s", k.IndexName)
 	return nil
 }

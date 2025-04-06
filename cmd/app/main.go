@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"product/internal/config"
+	"product/internal/ggrpc"
 	"product/internal/infrastructure/elasticsearch"
 	"product/internal/infrastructure/kafka"
 	"product/internal/infrastructure/models"
@@ -50,24 +51,31 @@ func main() {
 	// Kafka setup
 	brokers := []string{"localhost:9094"}
 	topic := "dbz.public.products"
-	// Consumer
 	kf := kafka.KafkaGetConfig(brokers, topic)
+	// Consumer
 	if err = kf.NewConsumer(); err != nil {
 		log.Fatal("main:трабл с созданием консьюмера")
 	}
-
 	// Грузим внешние данные
 	kf.ESClient = clientElastic.Client
 	kf.IndexName = indexName
-
 	defer kf.Consumer.Close()
+
 	// Subscribe
 	if err = kf.SubscribeTopic(); err != nil {
 		log.Fatal("main:subs make err")
 	}
-	// Read kafka + index name
+	// Read kafka
 	worker := 5
-	kf.WorkerPool(worker, indexName)
+	kf.WorkerPool(worker)
+
+	// gRPC
+	srv := ggrpc.NewServer("50051")
+	go func() {
+		if err := srv.Start(); err != nil {
+			log.Fatalf("failed to start grpc server: %v", err)
+		}
+	}()
 
 	// Ожидаем сигнал завершения или таймер
 	select {

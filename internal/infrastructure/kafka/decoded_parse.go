@@ -24,3 +24,15 @@ func decodeDebeziumDecimal(encoded string) (*big.Float, error) {
 
 	return result, nil
 }
+
+func parseProduct(p *KafkaMessage) map[string]interface{} {
+	price, _ := decodeDebeziumDecimal(p.Price)
+
+	return map[string]interface{}{
+		"id":             p.ID,
+		"name":           p.Name,
+		"description":    p.Description,
+		"price":          price,
+		"stock_quantity": p.StockQuantity,
+	}
+}
